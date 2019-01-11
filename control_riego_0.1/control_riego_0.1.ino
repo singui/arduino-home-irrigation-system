@@ -58,14 +58,10 @@ void setup() {
 
 void loop() {
   // cada bomba debe estar máximo 5 minutos prendida, cortar 10 minutos y volver a sensar hasta lograr el valor de humedad deseado y apagar la bomba  
-  Serial.print("timer: ");
-  Serial.println(timer);
-  Serial.print("timerB: ");
-  Serial.println(timerB);
-  Serial.print("timerPump: ");
-  Serial.println(timerPump);
-  Serial.print("timeCicle: ");
-  Serial.println(timeCicle);
+  printInConsole("timer", timer, "");
+  printInConsole("timerB", timerB, "");
+  printInConsole("timerPump", timerPump, "");
+  printInConsole("timeCicle", timeCicle, "");
   
   if (timerB >= timerPump) {
     connectWifi(); // conecto al wifi
@@ -74,40 +70,31 @@ void loop() {
         
     for (byte i = 0; i < MOISTURE_SENSORS_QUANTITY; i ++) {
       /* falta control para una sola bomba  */
-      Serial.print("Estado de la bomba ");
-      Serial.print(i);
-      Serial.print(": ");
-      Serial.println(pumpState[i]);
-      
+      printInConsole("Estado de la bomba " + i, pumpState[i], "");
+            
       if (pumpState[i]) {
         turnPumpOff(i);
       } else {
         moistureSensor[i] = getMappedMoistureSensor(i);  // mido la humedad del sensor
-        Serial.print("Humedad del sensor ");
-        Serial.print(i);
-        Serial.print(": ");
-        Serial.println(moistureSensor[i]);
-        
+        printInConsole("Humedad del sensor" + i, moistureSensor[i], "");
+                
         if (moistureSensor[i] <= MIN_MOISTURE) {
-          Serial.print("Cantidad de riegos: ");
-          Serial.println(flagWater);
-          
+          printInConsole("Cantidad de riegos", flagWater, "");
+                    
           if (flagWater > maxWater) {
             timerPump = timeCicle * maxCicles;
-            Serial.print("Actúalización del timerPump: ");
-            Serial.println(timerPump);
+            printInConsole("Actualización del timerPump", timerPump, "");
+            
           } else {
             turnPumpOn(i);
             timerPump += timerB;
             flagWater ++;
-            Serial.print("Actúalización del timerPump: ");
-            Serial.println(timerPump);
+            printInConsole("Actualización del timerPump", timerPump, "");
           }
           
         } else if (moistureSensor[i] > MIN_MOISTURE) {
           timerPump = timeCicle * maxCicles;
-          Serial.print("Actúalización del timerPump: ");
-          Serial.println(timerPump);
+          printInConsole("Actualización del timerPump", timerPump, "");
         }
         
       }
@@ -123,42 +110,27 @@ void loop() {
   if (timer >= timeCicle) {
     connectWifi(); // conecto al wifi
 
-    int *currentDate = getCurrentDate();  // traigo la fecha actual
-    String strCurrentDate;
-    for (byte i = 0; i < 6; i ++) {
-      strCurrentDate += (*currentDate + (i));
-      if (i < 2) strCurrentDate += "-";
-      else if (i == 2) strCurrentDate += " ";
-      else if (i < 5) strCurrentDate += ":";
-    }
+    int currentDate = getCurrentDate();  // traigo la fecha actual
+    String strCurrentDate = getStrCurrentDate();
   
     byte *allSensorsMoisture = getNeedWater();  // necesitan agua los sensores?
     bool rainsToday = getForecast(); // veo si va a llover (1 = llueve; 0 = no llueve)
 
     // es el primer ciclo? > en el primer ciclo riego
-    Serial.print("Cantidad de ciclos: ");
-    Serial.println(cicles);
-    Serial.print("Llueve hoy?: ");
-    Serial.println(rainsToday);
+    printInConsole("Cantidad de ciclos", cicles, "");
+    printInConsole("Llueve hoy?", rainsToday, "");
 
     // puse < a 10 para probar... acá tiene que ir == 1
     if (cicles < 10) {
-      Serial.print("Necesitan agua los sensores?: ");
-      Serial.println(allSensorsMoisture[0]);
+      printInConsole("Necesitan agua los sensores?", allSensorsMoisture[0], "");
       
       if (allSensorsMoisture[0]) {
         if (!rainsToday) {
           if (PUMPS_QUANTITY == 1) { // hay una sola bomba, la prendo si ningún sensor se opone
             bool turnOn = true;
             for (byte i = 1; i < MOISTURE_SENSORS_QUANTITY + 1; i ++) {
-              Serial.print("Humedad sensor (array)");
-              Serial.print(i);
-              Serial.print(": ");
-              Serial.println(allSensorsMoisture[i]);
-              Serial.print("Humedad sensor (pointer)");
-              Serial.print(i);
-              Serial.print(": ");
-              Serial.println(*allSensorsMoisture + (i + 1));
+              printInConsole("Humedad sensor " + i, allSensorsMoisture + (i+ 1), "");
+              
               if (*(allSensorsMoisture + (i + 1)) == 2) turnOn = false;
             }
             if (turnOn) *pumpState = *turnPumpOn(0);
@@ -186,38 +158,8 @@ void loop() {
        - llueve hoy?
     */
     
-    String payload = "{\"date\":";
-    payload += strCurrentDate;
-    payload += ",";
-    payload += "{\"cicleNumber\":";
-    payload += cicles;
-    payload += ",";
-    payload += "\"rainsToday\":";
-    payload += rainsToday;
-    payload += ", \"sensors\": [";
-    for (byte i = 0; i < MOISTURE_SENSORS_QUANTITY; i ++) { 
-      if (i > 0) payload += ", ";
-      payload += "{\"sensorId\":";
-      payload += i + 1;
-      payload += ", \"moistureSensor\":";
-      payload += *(allSensorsMoisture + (i + 1));
-      payload += "}";
-    }
-    payload += "]";
-    payload += ", \"pumps\": [";
-    for (byte i = 0; i < PUMPS_QUANTITY; i ++) { 
-      if (i > 0) payload += ", ";
-      payload += "{\"pumpId\":";
-      payload += i + 1;
-      payload += ", \"pumpState\":";
-      payload += *pumpState + i;
-      payload += "}";
-    }
-    payload += "]}";
-
-    int payloadSize = payload.length();
-    
-    Serial.println(payload);
+    String payload = getJsonPayload(strCurrentDate, cicles, rainsToday);    
+    printInConsole("payLoad", payload, "");
     
     transmitData(strCurrentDate, payload);
 
@@ -249,6 +191,40 @@ bool transmitData(String jsonName, String payload) {
 }
 
 
+String getJsonPayload(strCurrentDate, cicles, rainsToday) {
+  String payload = "{\"date\":";
+  payload += strCurrentDate;
+  payload += ",";
+  payload += "{\"cicleNumber\":";
+  payload += cicles;
+  payload += ",";
+  payload += "\"rainsToday\":";
+  payload += rainsToday;
+  payload += ", \"sensors\": [";
+  for (byte i = 0; i < MOISTURE_SENSORS_QUANTITY; i ++) { 
+    if (i > 0) payload += ", ";
+    payload += "{\"sensorId\":";
+    payload += i + 1;
+    payload += ", \"moistureSensor\":";
+    payload += *(allSensorsMoisture + (i + 1));
+    payload += "}";
+  }
+  payload += "]";
+  payload += ", \"pumps\": [";
+  for (byte i = 0; i < PUMPS_QUANTITY; i ++) { 
+    if (i > 0) payload += ", ";
+    payload += "{\"pumpId\":";
+    payload += i + 1;
+    payload += ", \"pumpState\":";
+    payload += *pumpState + i;
+    payload += "}";
+  }
+  payload += "]}";
+
+  return payload;
+}
+
+
 byte *getNeedWater() {
   int moistureSensor[MOISTURE_SENSORS_QUANTITY];
   static byte toWater[MOISTURE_SENSORS_QUANTITY];
@@ -268,30 +244,22 @@ byte *getNeedWater() {
   for (byte i = 1; i < MOISTURE_SENSORS_QUANTITY + 1; i ++) {
     // chequeo humedad de los sensores
     moistureSensor[i] = getMappedMoistureSensor(i);
-    Serial.print("Humedad del sensor ");
-    Serial.print(i);
-    Serial.print(": ");
-    Serial.println(moistureSensor[i]);
-    
+    printInConsole("Humedad del sensor" + i, moistureSensor[i], "");
+        
     if (moistureSensor[i] <= MIN_MOISTURE) {
       toWater[i] = 1; // necesita agua
       toWater[0] = 1; // hay un sensor que necesita agua...
-      Serial.print(">> El sensor ");
-      Serial.print(i);
-      Serial.print(" necesita agua: ");
-      Serial.println(toWater[0]);
+      printInConsole(">> Sensor", i, ">> Necesita agua")
+      
     } else if (moistureSensor[i] < MAX_MOISTURE) {
       toWater[i] = 0; // no necesita agua
     } else {
       toWater[i] = 2; // tiene exceso de agua
     }
     
-    Serial.print("El sensor ");
-    Serial.print(i);
-    Serial.print(" necesita regar?: ");
-    if (toWater[i] == 1) Serial.println(" Si");
-    else if (toWater[i] == 2) Serial.println(" No... tiene exceso");
-    else if (toWater[i] == 0) Serial.println(" No... está OK");
+    if (toWater[i] == 1) printInConsole(">> Sensor ", i, ">> Necesita riego");
+    else if (toWater[i] == 2) printInConsole(">> Sensor ", i, ">> No necesita riego > tiene exceso");
+    else if (toWater[i] == 0) printInConsole(">> Sensor ", i, ">> No necesita riego > está OK");
   }
 
   return toWater;
@@ -319,11 +287,7 @@ bool *turnPumpOn(byte pump) {
   */
   pumpState[pump] = true;
   timerPump = 300000;  // 5 minutos de bomba encendida
-
-  Serial.print(">> Se prendió una bomba. La bomba ");
-  Serial.print(pump);
-  Serial.print(", estado: ");
-  Serial.println(pumpState[pump]);
+  printInConsole("Estado de la bomba" + pump, pumpState[pump], ">> Se prendió la única bomba.")
   
   return pumpState;
 }
@@ -334,10 +298,7 @@ void turnPumpOff(byte pump) {
   pumpState[pump] = false;
   timerPump = timer + timerStopPump;
 
-  Serial.print("<< Se apagó una bomba. La bomba ");
-  Serial.print(pump);
-  Serial.print(", estado: ");
-  Serial.println(pumpState[pump]);
+  printInConsole("Estado de la bomba" + pump, pumpState[pump], ">> Se apagó la única bomba")
 }
 
 
@@ -355,7 +316,7 @@ void connectWifi() {
 }
 
 
-// busco la fecha actual
+// busco la fecha actual y la devuelvo en un array
 int *getCurrentDate() {
   NTPclient.begin();
   NTPclient.update();
@@ -376,14 +337,27 @@ int *getCurrentDate() {
   return currentDate;
 }
 
+// tomo la fecha generada por getCurrentDate y la devuelvo como string
+String getStrCurrentDate() {
+  String strCurrentDate;
+  
+  for (byte i = 0; i < 6; i ++) {
+    strCurrentDate += (*currentDate + (i));
+    if (i < 2) strCurrentDate += "-";
+    else if (i == 2) strCurrentDate += " ";
+    else if (i < 5) strCurrentDate += ":";
+  }
+
+  return strCurrentDate;
+}
+    
+
 // devuelvo el valor inicial de timer para ajustarse a los defasajes de ms que pudo haber en el día
 long fixTime(byte currentMinutes) {
   unsigned long fixedTimer;
   if ((currentMinutes * 60 * 1000) >= timeCicle) currentMinutes = - timeCicle;
   fixedTimer = currentMinutes;
-
-  Serial.print(">> Ajusto el timer ");
-  Serial.println(fixedTimer);
+  printInConsole("Ajusto el timer", fixedTimer, "")
   
   return fixedTimer;
 }
@@ -458,4 +432,12 @@ bool getForecast() {
   HTTPclient.end();
   
   return rain;
+}
+
+void printInConsole(key, value, comment) {
+  Serial.print(key);
+  Serial.print(": ");
+  Serial.print(value);
+  Serial.print(". ");
+  Serial.println(comment);
 }
